@@ -1,0 +1,80 @@
+s4sdkapp
+--------
+
+
+package.json
+------------
+
+{
+	"version": "1.0.0",
+	"engines": {
+		"node": ">=11.0.0"
+	},
+	"dependencies": {
+		"express": "^4.17.1",
+		"@sap/cloud-sdk-core": "^1.11.2",
+		"@sap/cloud-sdk-vdm-sales-order-service": "^1.11.2"
+	}
+}
+
+
+server.js
+---------
+
+const express = require("express");
+const app = express();
+
+const {
+	desc
+} = require("@sap/cloud-sdk-core");
+
+const {
+	SalesOrder,
+	SalesOrderItem
+} = require("@sap/cloud-sdk-vdm-sales-order-service");
+
+function getSalesOrders() {
+	return SalesOrder.requestBuilder()
+		.getAll()
+		.filter(SalesOrder.TOTAL_NET_AMOUNT.greaterThan(2000))
+		.top(3)
+		.orderBy(new desc(SalesOrder.LAST_CHANGE_DATE_TIME))
+		.select(
+			SalesOrder.SALES_ORDER,
+			SalesOrder.LAST_CHANGE_DATE_TIME,
+			SalesOrder.INCOTERMS_LOCATION_1,
+			SalesOrder.TOTAL_NET_AMOUNT,
+			SalesOrder.TO_ITEM.select(SalesOrderItem.MATERIAL, SalesOrderItem.NET_AMOUNT)
+		)
+		.execute({
+			destinationName: process.env.apiDest
+		});
+}
+
+app.get("/", function (req, res) {
+	getSalesOrders()
+		.then(salesOrders => {
+			res.status(200).json(salesOrders);
+		});
+});
+
+const port = process.env.PORT || 3000;
+app.listen(port, function () {
+	console.info("Listening on port: " + port);
+});
+
+
+manifest.yml
+------------
+
+applications:
+- name: s4sdkapp
+  random-route: true
+  memory: 256M
+  disk_quota: 256M
+  buildpacks:
+    - nodejs_buildpack
+  services:
+    - <api-access>
+  env:
+    apiDest: <api-access>

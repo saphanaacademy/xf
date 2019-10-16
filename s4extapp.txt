@@ -1,0 +1,169 @@
+s4extapp
+--------
+
+
+em
+--
+
+{
+    "emname": "em",
+    "namespace": "sap/<system>/events",
+    "options": {
+        "management": true,
+        "messagingrest": true,
+        "messaging": true
+    },
+    "rules": {
+        "topicRules": {
+            "outboundFilter": [
+                "sap/S4HANAOD/<system>/#",
+                "${namespace}/#"  
+            ]
+        },
+        "queueRules": {
+            "outboundFilter": [
+                "sap/S4HANAOD/<system>/#",
+                "${namespace}/#"  
+            ]
+        }
+    }
+}
+
+
+cds init s4extapp --modules "db,srv" --db-technology hana 
+
+
+db/data-model.cds
+-----------------
+
+namespace s4extapp;
+
+using { managed } from '@sap/cds/common';
+
+entity SalesOrders : managed {
+  key ID                 : UUID;
+      salesOrder         : String;
+      incotermsLocation1 : String;
+};
+
+annotate SalesOrders with {
+  ID                 @title : 'ID'  @UI.HiddenFilter;
+  salesOrder         @title : 'Sales Order';
+  incotermsLocation1 @title : 'Inco. Location1';
+}
+
+annotate SalesOrders with @(UI : {
+  HeaderFacets        : [{
+    $Type  : 'UI.ReferenceFacet',
+    Target : '@UI.FieldGroup#header'
+  }],
+  Facets              : [{
+    $Type  : 'UI.ReferenceFacet',
+    Label  : 'Details',
+    Target : '@UI.FieldGroup#details'
+  }],
+  FieldGroup #header  : {Data : [{Value : ID}]},
+  FieldGroup #details : {Data : [
+    {Value : createdAt},
+    {Value : salesOrder},
+    {Value : incotermsLocation1}
+  ]},
+  SelectionFields     : [
+    salesOrder,
+    incotermsLocation1
+  ],
+  LineItem            : [
+    {Value : ID},
+    {Value : createdAt},
+    {Value : salesOrder},
+    {Value : incotermsLocation1}
+  ]
+});
+
+
+srv/cat-service.cds
+-------------------
+
+using {
+  s4extapp,
+  sap.common
+} from '../db/data-model';
+
+service CatalogService {
+  entity SalesOrders as projection on s4extapp.SalesOrders;
+}
+
+
+srv/cat-service.js
+------------------
+
+module.exports = (srv) => {
+
+    const { SalesOrders } = cds.entities
+
+    const em = cds.connect.to("em");
+
+    const {
+        SalesOrder
+    } = require("@sap/cloud-sdk-vdm-sales-order-service");
+
+    function getSalesOrder(key) {
+        return SalesOrder.requestBuilder()
+            .getByKey(key)
+            .select(
+                SalesOrder.SALES_ORDER,
+                SalesOrder.INCOTERMS_LOCATION_1
+            )
+            .execute({
+                destinationName: "<api-access>"
+            });
+    }
+
+    async function addSalesOrder(SalesOrders, salesOrder) {
+        const rows = await cds.run(
+            INSERT.into(SalesOrders).entries(salesOrder)
+        );
+        console.info("Add Sales Order: rows inserted=", rows);
+    }
+
+    em.on("sap/S4HANAOD/<em-client>/BO/SalesOrder/Changed", async (message) => {
+        console.info("Event Message: " + JSON.stringify(message));
+        getSalesOrder(message.data.KEY[0].SALESORDER)
+            .then(salesOrder => {
+                console.info("SalesOrder: ", JSON.stringify(salesOrder));
+                addSalesOrder(SalesOrders, salesOrder);
+            });
+    })
+
+}
+
+
+npm install --save @sap/cloud-sdk-vdm-sales-order-service
+npm install --save @sap/xb-msg-amqp-v100
+
+
+/package.json
+-------------
+
+      },
+      "em": {
+        "kind": "enterprise-messaging",
+        "credentials": {
+          "namespace": "<em-namespace>"
+        }
+
+
+/manifest.yml
+-------------
+
+applications:
+- name: s4extapp
+  random-route: true
+  memory: 256M
+  disk_quota: 256M
+  buildpacks:
+    - nodejs_buildpack
+  services:
+    - <api-access>
+    - <em>
+    - <hdi-container>

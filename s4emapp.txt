@@ -1,0 +1,148 @@
+s4emapp
+-------
+
+
+package.json
+------------
+
+{
+	"version": "1.0.0",
+	"engines": {
+		"node": ">=11.0.0"
+	},
+	"dependencies": {
+		"express": "^4.17.1",
+		"@sap/cloud-sdk-core": "^1.11.2",
+		"@sap/cloud-sdk-vdm-sales-order-service": "^1.11.2",
+		"@sap/xsenv": "^2.0.0",
+		"@sap/xb-msg-amqp-v100": "^0.9.19"
+	}
+}
+
+
+server.js
+---------
+
+const express = require("express");
+const app = express();
+
+const xsenv = require("@sap/xsenv");
+const em = xsenv.getServices({
+	em: {
+		tag: "enterprise-messaging"
+	}
+}).em;
+
+const emAMQP = em.messaging.filter(function (em) {
+    return em.protocol == 'amqp10ws'
+});
+
+const emOptions = {
+	wss: {
+		host: new URL(emAMQP[0].uri).hostname,
+		path: new URL(emAMQP[0].uri).pathname
+	},
+	oa2: {
+		endpoint: emAMQP[0].oa2.tokenendpoint,
+		client: emAMQP[0].oa2.clientid,
+		secret: emAMQP[0].oa2.clientsecret
+	  }
+};
+
+const {
+	Client
+} = require("@sap/xb-msg-amqp-v100");
+
+const client = new Client(emOptions);
+
+const stream = client.receiver("queue").attach("queue:" + process.env.emQueue);
+
+stream
+	.on("data", (message) => {
+		var payload = JSON.parse(message.payload.toString("utf8"));
+		console.info("message: " + JSON.stringify(payload));
+		getSalesOrder(payload.data.KEY[0].SALESORDER)
+			.then(salesOrder => {
+				console.info("SalesOrder:", salesOrder);
+			});
+		message.done();
+	});
+
+client
+	.on("connected", (destination, peerInfo) => {
+		console.info("connected:", peerInfo.description);
+	})
+	.on("error", (error) => {
+		console.info("error:", error);
+	})
+	.on("disconnected", (hadError, byBroker, statistics) => {
+		console.info("disconnected:");
+	});
+
+const {
+	SalesOrder
+} = require("@sap/cloud-sdk-vdm-sales-order-service");
+
+function getSalesOrder(key) {
+	return SalesOrder.requestBuilder()
+		.getByKey(key)
+		.select(
+			SalesOrder.SALES_ORDER,
+			SalesOrder.INCOTERMS_LOCATION_1,
+			SalesOrder.TOTAL_NET_AMOUNT
+		)
+		.execute({
+			destinationName: process.env.apiDest
+		});
+}
+
+app.get("/", function (req, res) {
+	res.type("text/html").status(200).send("<html><head><title>Digital Partner Engineering</title></head><body><a href='/connect'>Connect</a><br/><a href='/disconnect'>Disconnect</a></body></html>");
+});
+
+app.get("/connect", function (req, res) {
+	client.connect();
+	res.status(200).send("Connected!");
+});
+
+app.get("/disconnect", function (req, res) {
+	client.disconnect();
+	res.status(200).send("Disconnected!");
+});
+
+const port = process.env.PORT || 3000;
+app.listen(port, function () {
+	console.info("Listening on port: " + port);
+});
+
+
+manifest.yml
+------------
+
+applications:
+- name: s4emapp
+  random-route: true
+  memory: 256M
+  disk_quota: 256M
+  buildpacks:
+    - nodejs_buildpack
+  services:
+    - <api-access
+    - <em>
+  env:
+    apiDest: <api-access>
+    emQueue: sap/<system>/events/<queue>
+
+
+postman
+-------
+
+?grant_type=client_credentials&response_type=token
+
+pm.environment.set("token", "Bearer " + JSON.parse(responseBody).access_token);
+
+{{token}}
+
+/hub/rest/api/v1/management/messaging/queues
+
+/messagingrest/v1/queues/sap%2F<system>%2Fevents%2F<queue>/messages/consumption
