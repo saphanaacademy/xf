@@ -127,7 +127,7 @@ applications:
   buildpacks:
     - nodejs_buildpack
   services:
-    - <api-access
+    - <api-access>
     - <em>
   env:
     apiDest: <api-access>
