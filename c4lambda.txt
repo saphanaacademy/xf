@@ -1,0 +1,31 @@
+c4lambda
+--------
+
+
+const axios = require("axios");
+module.exports = {
+    main: async function (event, context) {
+    let orderUrl = process.env.GATEWAY_URL + "/" + event.data.baseSiteUid + "/orders/" + event.data.orderCode;
+    try {
+        let orderResponse = await axios.get(orderUrl);
+        return orderResponse.data;
+    } catch (err) {
+        console.error("Error:", err.message);
+    }
+} }
+
+
+{
+    "dependencies": {
+        "axios": "^0.19.0"
+    }
+}
+
+
+        let reviewUrl = process.env.GATEWAY_URL + "/" + event.data.baseSiteUid + "/products/" + orderResponse.data.entries[0].product.code + "/reviews";
+        let reviewJSON = {
+            "headline": "Just shipped to " + orderResponse.data.deliveryAddress.town,
+            "comment": "You could have a " + orderResponse.data.entries[0].product.manufacturer + " " + orderResponse.data.entries[0].product.name + " shipped to you today too!",
+            "rating": 5.0
+        };
+        let reviewResponse = await axios.post(reviewUrl, reviewJSON);
