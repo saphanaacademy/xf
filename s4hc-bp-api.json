@@ -1,0 +1,38 @@
+{
+    "provider": "SAP S/4HANA Cloud",
+    "name": "S4HC BusinessPartner API",
+    "description": "S/4HANA Cloud BusinessPartner OData API",
+    "shortDescription": "S/4HANA Cloud BusinessPartner API",
+    "api": {
+        "targetUrl": "<url>",
+        "specificationUrl": "<url>/sap/opu/odata/sap/API_BUSINESS_PARTNER/$metadata",
+        "apiType": "OData",
+        "credentials": {
+            "basic": {
+                "username": "<username>",
+                "password": "<password>"
+            }
+        },
+        "specificationCredentials": {
+            "basic": {
+                "username": "<username>",
+                "password": "<password>"
+            }
+        }
+    },
+    "documentation": {
+        "displayName": "S/4HANA Cloud BusinessPartner OData API",
+        "description": "S/4HANA Cloud BusinessPartner OData API",
+        "type": "Overview",
+        "tags": [
+            "s4h"
+        ],
+        "docs": [
+            {
+                "title": "S/4HANA Cloud BusinessPartner OData API",
+                "type": "type",
+                "source": "source"
+            }
+        ]
+    }
+}

@@ -1,0 +1,376 @@
+c4fraudcheck
+------------
+
+    <action id='fraudCheck' bean='dynamicProcessEventAction'>
+        <parameter name='BUSINESSEVENT' value='FraudCheckEvent' />
+        <transition name='OK' to='waitForExternalFraudCheck'/>
+    </action>
+
+    <wait id='waitForExternalFraudCheck' then='error'>
+        <case event='externalFraudCheckEvent'>
+            <choice id='OK' then='sendOrderPlacedNotification'/>
+            <choice id='POTENTIAL' then='manualOrderCheckCSA'/>
+            <choice id='FRAUD' then='notifyCustomer'/>
+        </case>
+    </wait>
+
+---
+
+INSERT_UPDATE DynamicProcessDefinition;code[unique=true];active;content
+;order-process;true;"<xml>"
+
+---
+
+$destination_target=Default_Template
+INSERT_UPDATE ProcessEventConfiguration; eventClass[unique = true]; destinationTarget(id)[unique = true, default = $destination_target]; version[unique = true, default = 1]; exportFlag; priority(code); exportName       ; converterBean; description ; extensionName; process
+                                       ; FraudCheckEvent          ;                                                            ;                                    ; true      ; MEDIUM        ; order.fraudcheck ;              ; "Order Fraud Check v1" ; processing   ; de.hybris.platform.orderprocessing.model.OrderProcessModel
+
+INSERT_UPDATE EventPropertyConfiguration; eventConfiguration(eventClass, destinationTarget(id[default = $destination_target]), version[default = 1])[unique = true]; propertyName[unique = true]; propertyMapping      ; title                   ; description; examples(key, value)[map-delimiter = |]; required[default = true]; type[default = 'string']
+                                        ; FraudCheckEvent                                                                                                  ; processCode                ; "process.code"           ; "Business Process Code" ; Business Process Code ; processCode->customerRegistrationEmailProcess-firstname.lastname@domain.com-1536837535539
+                                        ; FraudCheckEvent                                                                                                  ; orderCode                  ; "process.order.code"     ; "Code of an Order"        ; Order Code            ; orderCode->76272727
+                                        ; FraudCheckEvent                                                                                                  ; baseSiteUid                ; "process.order.site.uid" ; "Unique id of a BaseSite"   ; BaseSite Uid          ; baseSiteUid->electronics
+
+---
+
+const axios = require("axios");
+
+module.exports = {
+    main: async function (event, context) {
+        // get event details
+        var traceCtxHeaders = extractTraceHeaders(event.extensions.request.headers);
+        var orderCode = event.data.orderCode;
+        var bpCode = event.data.processCode;
+        var baseSiteUid = event.data.baseSiteUid;
+        console.log(`Order ${orderCode}: fraud check starting for business process ${bpCode} on site ${baseSiteUid}`);
+        // get order details
+        var order = await getOrder(orderCode, baseSiteUid, traceCtxHeaders);
+        // establish fraud score
+        var results = [];
+        checkOrderValue(order, results);
+        await checkNumberOfOrders(order, results, traceCtxHeaders);
+        console.log(`Order ${orderCode}: fraud check results: ${JSON.stringify(results)}`);
+        var score = 0;
+        for (var r in results) {
+            score += results[r].score;
+        }
+        // pass or fail based on score
+        var returnStatus;
+        if (score >= 100) {
+            returnStatus = "POTENTIAL";
+            console.log(`Order ${orderCode}: fraud check failed with score ${score}`);
+        } else {
+            returnStatus = "OK";
+            console.log(`Order ${orderCode}: fraud check passed with score ${score}`);
+        }
+        await returnBusinessProcessResult(returnStatus, bpCode, traceCtxHeaders);
+    }
+}
+
+function extractTraceHeaders(headers) {
+    const traceHeaders = ["x-request-id", "x-b3-traceid", "x-b3-spanid", "x-b3-parentspanid", "x-b3-sampled", "x-b3-Flags", "x-ot-span-context"];
+    var map = {};
+    for (var h in traceHeaders) {
+        var headerName = traceHeaders[h];
+        var headerVal = headers[headerName];
+        if (headerVal !== undefined) {
+            map[headerName] = headerVal
+        }
+    }
+    return map;
+}
+
+async function getOrder(code, baseSiteUid, traceCtx) {
+    const ordersUrl = `${process.env["occ-GATEWAY_URL"]}/${baseSiteUid}/orders/${code}`;
+    const response = await axios.get(ordersUrl, { headers: traceCtx });
+    return response.data;
+}
+
+async function checkOrderValue(order, results) {
+    var details = {};
+    details.name = "High order value";
+    if (order.totalPrice.value > 500) {
+        details.result = "Fail";
+        details.score = 50;
+    } else {
+        details.result = "Pass";
+        details.score = 0;
+    }
+    results.push(details);
+}
+
+async function checkNumberOfOrders(order, results, traceCtx) {
+    const ordersUrl = `${process.env["occ-GATEWAY_URL"]}/${order.store}/users/${order.user.uid}/orders`;
+    var response = await axios.head(ordersUrl, { headers: traceCtx });
+    var nrOrders = response.headers["x-total-count"];
+    var details = {};
+    details.name = "Previous orders";
+    if (nrOrders <= 1) {
+        details.result = "Fail";
+        details.score = 50;
+    } else {
+        details.result = "Pass";
+        details.score = 0;
+    }
+    results.push(details);
+}
+
+async function returnBusinessProcessResult(result, bpCode, traceCtx) {
+    var body = {
+        "event": `${bpCode}_externalFraudCheckEvent`,
+        "choice": result
+    };
+    var postResponse = axios.post(`${process.env["admin-GATEWAY_URL"]}/businessprocess/events`, body, { headers: traceCtx });
+}
+
+---
+
+{
+    "dependencies": {
+        "axios": "latest"
+    }
+}
+
+---
+
+INSERT_UPDATE IntegrationObject; code[unique = true]; 
+; FraudReport 
+ 
+INSERT_UPDATE IntegrationObjectItem; integrationObject(code)[unique=true]; code[unique = true]; type(code) 
+; FraudReport	; OrderStatus        	; OrderStatus 
+; FraudReport	; Order              	; Order 
+; FraudReport	; FraudReport        	; FraudReport 
+; FraudReport	; FraudSymptomScoring	; FraudSymptomScoring 
+; FraudReport	; FraudStatus        	; FraudStatus 
+ 
+INSERT_UPDATE IntegrationObjectItemAttribute; integrationObjectItem(integrationObject(code), code)[unique = true]; attributeName[unique = true]; attributeDescriptor(enclosingType(code), qualifier); returnIntegrationObjectItem(integrationObject(code), code); unique[default = false] 
+; FraudReport:OrderStatus        	; code                 	; OrderStatus:code                	;                                	; true 
+; FraudReport:Order              	; code                 	; Order:code                      	;                                	; true 
+; FraudReport:Order              	; versionID            	; Order:versionID                 	;                                	; true 
+; FraudReport:Order              	; status               	; Order:status                    	; FraudReport:OrderStatus        	;  
+; FraudReport:Order              	; potentiallyFraudulent	; Order:potentiallyFraudulent     	;                                	;  
+; FraudReport:Order              	; fraudulent           	; Order:fraudulent                	;                                	;  
+; FraudReport:FraudReport        	; provider             	; FraudReport:provider            	;                                	;  
+; FraudReport:FraudReport        	; status               	; FraudReport:status              	; FraudReport:FraudStatus        	;  
+; FraudReport:FraudReport        	; explanation          	; FraudReport:explanation         	;                                	;  
+; FraudReport:FraudReport        	; code                 	; FraudReport:code                	;                                	; true 
+; FraudReport:FraudReport        	; fraudSymptomScorings 	; FraudReport:fraudSymptomScorings	; FraudReport:FraudSymptomScoring	;  
+; FraudReport:FraudReport        	; timestamp            	; FraudReport:timestamp           	;                                	;  
+; FraudReport:FraudReport        	; order                	; FraudReport:order               	; FraudReport:Order              	; true 
+; FraudReport:FraudSymptomScoring	; name                 	; FraudSymptomScoring:name        	;                                	; true 
+; FraudReport:FraudSymptomScoring	; fraudReport          	; FraudSymptomScoring:fraudReport 	; FraudReport:FraudReport        	; true 
+; FraudReport:FraudSymptomScoring	; explanation          	; FraudSymptomScoring:explanation 	;                                	;  
+; FraudReport:FraudSymptomScoring	; score                	; FraudSymptomScoring:score       	;                                	;  
+; FraudReport:FraudStatus        	; code                 	; FraudStatus:code                	;                                	; true 
+
+INSERT_UPDATE Employee;uid[unique=true];password;groups(uid);
+;ODATAUSER;<password>;integrationadmingroup;
+
+INSERT_UPDATE BasicCredential;id[unique=true];username;password
+;odatauser-credential;ODATAUSER;<password>
+
+INSERT_UPDATE Endpoint;id[unique=true];name;version[unique=true];description;specUrl;specData;extensionName
+;ec-fraudreport;Fraud Report;v1;"Fraud Report OData Service";{ccv2.services.api.url.0}/odata2webservices/FraudReport/$metadata;;odata2webservices
+
+INSERT_UPDATE ExposedDestination;id[unique=true];url;endpoint(id)[unique=true];additionalProperties(key,value)[map-delimiter=|];destinationTarget(id)[default=Default_Template];active[default=true];credential(id)
+;ec-fraudreport;https://ODATAUSER:<password>@<host>/odata2webservices/FraudReport;ec-fraudreport;;<destination-kyma>;;odatauser-credential
+
+---
+
+            setOrderInvalid(orderCode, traceCtxHeaders);
+            createFraudReport(orderCode, results, false, traceCtxHeaders);
+
+            createFraudReport(orderCode, results, true, traceCtxHeaders);
+
+async function setOrderInvalid(orderCode, traceCtx) {
+    var body = {
+        code: orderCode,
+        versionID: null,
+        potentiallyFraudulent: true,
+        status: { code: "CHECKED_INVALID" }
+    };
+    var postResponse = await axios.post(`${process.env["fraudreport-GATEWAY_URL"]}/Orders`, body, { headers: traceCtx });
+    return postResponse;
+}
+
+async function createFraudReport(orderCode, results, passed, traceCtx) {
+    var body = {
+        code: orderCode + "_FR_0",
+        order: { code: orderCode },
+        provider: "xf-lambda-fraudCheck",
+        timestamp: `/Date(${Date.now()})/`,
+        status: { code: passed ? "OK" : "FRAUD" }
+    };
+    var postResponse = await axios.post(`${process.env["fraudreport-GATEWAY_URL"]}/FraudReports`, body, { headers: traceCtx });
+    for (var r in results) {
+        var entry = results[r];
+        var scoringBody = {
+            name: `${entry.name}`,
+            score: entry.score,
+            explanation: `${entry.result}`,
+            fraudReport: { code: orderCode + "_FR_0", order: { code: orderCode } }
+        };
+        var entryResponse = await axios.post(`${process.env["fraudreport-GATEWAY_URL"]}/FraudSymptomScorings`, scoringBody, { headers: traceCtx });
+    }
+}
+
+---
+
+const HunterSDK = require("hunterio");
+const hunter = new HunterSDK(process.env.HUNTER_API_KEY);
+
+        await checkEmailAddress(order, results, traceCtxHeaders);
+
+async function checkEmailAddress(order, results, traceCtx) {
+    hunter.emailVerifier({
+        email: order.user.uid
+    }, function (err, body) {
+        if (err) {
+            // handle error
+        } else {
+            var details = {};
+            details.name = "Deliverable email address";
+            if (body.data.result === "deliverable") {
+                details.result = "Pass";
+                details.score = 0;
+            } else if (body.data.result === "undeliverable") {
+                details.result = "Fail";
+                details.score = 50;
+            } else {
+                // unable to validate = risky
+                details.result = "Fail";
+                details.score = 25;
+            };
+            results.push(details);
+            var details2 = {};
+            details2.name = "Disposable email address";
+            if (body.data.disposable === false) {
+                details2.result = "Pass";
+                details2.score = 0;
+            } else {
+                details2.result = "Fail";
+                details2.score = 50;
+            };
+            results.push(details2);
+        }
+    });
+}
+
+---
+
+{
+    "dependencies": {
+        "axios": "latest",
+        "hunterio": "latest"
+    }
+}
+
+---
+
+HUNTER_API_KEY
+
+---
+
+{
+    "systemName": "<system>",
+    "communicationArrangement": {
+        "communicationArrangementName": "<name>",
+        "scenarioId": "SAP_COM_0008",
+        "inboundAuthentication": "BasicAuthentication",
+        "outboundAuthentication": "BasicAuthentication",
+        "outboundServices": [
+            {
+                "name": "Replicate Customers from S/4 System to Client",
+                "isServiceActive": false
+            },
+            {
+                "name": "Replicate Suppliers from S/4 System to Client",
+                "isServiceActive": false
+            },
+            {
+                "name": "Replicate Company Addresses from S/4 System to Client",
+                "isServiceActive": false
+            },
+            {
+                "name": "Replicate Workplace Addresses from S/4 System to Client",
+                "isServiceActive": false
+            },
+            {
+                "name": "Replicate Personal Addresses from S/4 System to Client",
+                "isServiceActive": false
+            },
+            {
+                "name": "Business Partner - Replicate from SAP S/4HANA Cloud to Client",
+                "isServiceActive": false
+            },
+            {
+                "name": "Business Partner Relationship - Replicate from SAP S/4HANA Cloud to Client",
+                "isServiceActive": false
+            },
+            {
+                "name": "Business Partner - Send Confirmation from SAP S/4HANA Cloud to Client",
+                "isServiceActive": false
+            },
+            {
+                "name": "BP Relationship - Send Confirmation from SAP S/4HANA Cloud to Client",
+                "isServiceActive": false
+            }
+        ],
+        "communicationSystem": {
+            "communicationSystemHostname": "https://default.com",
+            "outboundCommunicationUser": {
+                "username": "DefaultUser",
+                "password": "DefaultPassword"
+            }
+        }
+    }
+}
+
+---
+
+https://github.com/janmedrek/one-click-integration-script
+
+one-click-integration.sh --url "<token>"
+
+curl -X POST -d @s4hc-bp-api.json https://gateway.<kyma-runtime>.cluster.extend.cx.cloud.sap/<registered-system>/v1/metadata/services --cert generated.crt --key generated.key -k
+
+---
+
+        await checkEmailAddressInS4HC(order, results);
+
+const { AddressEmailAddress } = require("@sap/cloud-sdk-vdm-business-partner-service");
+
+async function checkEmailAddressInS4HC(order, results) {
+    var response = await AddressEmailAddress.requestBuilder()
+        .getAll()
+        .filter(AddressEmailAddress.EMAIL_ADDRESS.equals(order.user.uid))
+        .execute({
+            url: process.env['s4hcbp-GATEWAY_URL']
+        })
+        ;
+    var details = {};
+    details.name = "S/4HANA Cloud email address";
+    if (response.length == 0) {
+        details.result = "Fail";
+        details.score = 50;
+    } else {
+        details.result = "Pass";
+        details.score = 0;
+    };
+    results.push(details);
+}
+
+---
+
+{
+    "dependencies": {
+        "axios": "latest",
+        "hunterio": "latest",
+        "@sap/cloud-sdk-core": "latest",
+        "@sap/cloud-sdk-vdm-business-partner-service": "latest"
+    }
+}
+
+---
+
+NPM_REGISTRY    https://npm.sap.com
+NPM_SCOPE       @sap
