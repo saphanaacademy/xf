@@ -215,58 +215,39 @@ async function createFraudReport(orderCode, results, passed, traceCtx) {
 
 ---
 
-const HunterSDK = require("hunterio");
-const hunter = new HunterSDK(process.env.HUNTER_API_KEY);
-
         await checkEmailAddress(order, results, traceCtxHeaders);
 
 async function checkEmailAddress(order, results, traceCtx) {
-    hunter.emailVerifier({
-        email: order.user.uid
-    }, function (err, body) {
-        if (err) {
-            // handle error
-        } else {
-            var details = {};
-            details.name = "Deliverable email address";
-            if (body.data.result === "deliverable") {
-                details.result = "Pass";
-                details.score = 0;
-            } else if (body.data.result === "undeliverable") {
-                details.result = "Fail";
-                details.score = 50;
-            } else {
-                // unable to validate = risky
-                details.result = "Fail";
-                details.score = 25;
-            };
-            results.push(details);
-            var details2 = {};
-            details2.name = "Disposable email address";
-            if (body.data.disposable === false) {
-                details2.result = "Pass";
-                details2.score = 0;
-            } else {
-                details2.result = "Fail";
-                details2.score = 50;
-            };
-            results.push(details2);
-        }
-    });
+    const response = await axios.get(`${process.env.EMAIL_CHECK_SERVICE}&email=${order.user.uid}`, { headers: traceCtx });
+    var details = {};
+    details.name = "Deliverable email address";
+    if (response.data.result === "deliverable") {
+        details.result = "Pass";
+        details.score = 0;
+    } else if (response.data.result === "undeliverable") {
+        details.result = "Fail";
+        details.score = 50;
+    } else {
+        // unable to validate = risky
+        details.result = "Fail";
+        details.score = 25;
+    };
+    results.push(details);
+    var details2 = {};
+    details2.name = "Disposable email address";
+    if (response.data.disposable === false) {
+        details2.result = "Pass";
+        details2.score = 0;
+    } else {
+        details2.result = "Fail";
+        details2.score = 50;
+    };
+    results.push(details2);
 }
 
 ---
 
-{
-    "dependencies": {
-        "axios": "latest",
-        "hunterio": "latest"
-    }
-}
-
----
-
-HUNTER_API_KEY
+EMAIL_CHECK_SERVICE     https://api.hunter.io/v2/email-verifier?api_key=
 
 ---
 
