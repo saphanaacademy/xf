@@ -345,7 +345,6 @@ async function checkEmailAddressInS4HC(order, results) {
 {
     "dependencies": {
         "axios": "latest",
-        "hunterio": "latest",
         "@sap/cloud-sdk-core": "latest",
         "@sap/cloud-sdk-vdm-business-partner-service": "latest"
     }
