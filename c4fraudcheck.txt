@@ -354,3 +354,21 @@ async function checkEmailAddressInS4HC(order, results) {
 
 NPM_REGISTRY    https://npm.sap.com
 NPM_SCOPE       @sap
+
+---
+
+        await checkEmailAddressInS4H(order, results);
+
+async function checkEmailAddressInS4H(order, results) {
+    var response = await axios.get(process.env['s4hbp-GATEWAY_URL'] + "/A_AddressEmailAddress?$filter=EmailAddress%20eq%20%27" + order.user.uid + "%27");
+    var details = {};
+    details.name = "S/4HANA email address";
+    if (response.length == 0) {
+        details.result = "Fail";
+        details.score = 50;
+    } else {
+        details.result = "Pass";
+        details.score = 0;
+    };
+    results.push(details);
+}
