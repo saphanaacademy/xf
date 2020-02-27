@@ -4,7 +4,7 @@
     "description": "S/4HANA BusinessPartner OData API",
     "shortDescription": "S/4HANA BusinessPartner API",
     "api": {
-        "targetUrl": "<url>",
+        "targetUrl": "<url>/sap/opu/odata/sap/API_BUSINESS_PARTNER",
         "specificationUrl": "<url>/sap/opu/odata/sap/API_BUSINESS_PARTNER/$metadata",
         "apiType": "OData",
         "credentials": {
