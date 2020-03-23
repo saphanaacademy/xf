@@ -29,8 +29,7 @@ em
     }
 }
 
-
-cds init s4extapp --modules "db,srv" --db-technology hana 
+cds init s4extapp --add hana
 
 
 db/data-model.cds
@@ -138,6 +137,7 @@ module.exports = (srv) => {
 }
 
 
+npm install --save @sap/cds
 npm install --save @sap/cloud-sdk-vdm-sales-order-service
 npm install --save @sap/xb-msg-amqp-v100
 
@@ -145,12 +145,19 @@ npm install --save @sap/xb-msg-amqp-v100
 /package.json
 -------------
 
-      },
-      "em": {
-        "kind": "enterprise-messaging",
-        "credentials": {
-          "namespace": "<em-namespace>"
-        }
+            "db": {
+                "kind": "hana",
+                "model": [
+                    "db",
+                    "srv"
+                ]
+            },
+            "em": {
+              "kind": "enterprise-messaging",
+              "credentials": {
+                "namespace": "<em-namespace>"
+              }
+            }
 
 
 /manifest.yml
@@ -160,7 +167,7 @@ applications:
 - name: s4extapp
   random-route: true
   memory: 256M
-  disk_quota: 256M
+  disk_quota: 512M
   buildpacks:
     - nodejs_buildpack
   services:
